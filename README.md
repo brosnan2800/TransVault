@@ -2,16 +2,32 @@
 
 沉浸式双语网页翻译 Chrome/Edge (MV3) 扩展。整页双语对照、划词翻译、多引擎分层回退。
 
-> 这是 TransVault 三大块中的**第一块：页面翻译插件**。剪藏 / Obsidian 导入 / 发稿为后续块。
+> **定位**：浏览器端只做两件事——**实时页面翻译**（已完成）与**特定网站翻译墙突破**（进行中）。
+> 剪藏 / AI 加工 / 插图 / 发稿交由 Obsidian 生态（Web Clipper / 翻译插件 / Agent 插件 / 发布工具）组合完成；
+> 扩展保留 Obsidian 轻量桥接与翻译缓存导出作为可选项。
 
 ## 功能
 
 - **整页双语翻译**：译文插在原文下方（沉浸式同款样式），支持双语 / 仅译文 / 仅原文三态切换，一键还原。
 - **划词翻译**：选中文本即弹出译文浮层。
 - **多引擎分层回退**：默认 Google 免 Key；可配置必应(Azure) / 阿里云 / 百度 / 腾讯云 / LibreTranslate / LLM(DeepSeek·Gemini·OpenAI兼容) / baoyu 风格。
-- **翻译缓存**：7 天 TTL，切语言/引擎不脏读；页面翻过的段落剪藏时直接复用。
+- **翻译缓存**：7 天 TTL，切语言/引擎不脏读。
+- **动态补翻**：滚动 / 异步加载的新内容自动补翻（MutationObserver 增量）。
+- **站点适配**：特殊 DOM 站点（如 x.com）按规则精确翻译。
 - **配额保护**：免费 Key 引擎月度用量计数，超额自动降级，不自动扣费。
 - **快捷键**：`Alt+A` 切换当前页翻译。
+
+## 翻译墙处理（进行中）
+
+「翻译墙」= 阻碍拿到可翻译原文的障碍。分五类，检测后走对应策略（详见 `DESIGN.md` §5）：
+
+| 墙 | 示例 | 策略 |
+|---|---|---|
+| 付费墙 P | Substack / 名刊付费文 | archive.is 快照 → 降级提示 |
+| 反爬墙 A | Cloudflare 挑战 / 403 | 清 Cookie → 等待挑战 → 引导互补扩展 |
+| 动态墙 D | 无限滚动 / SPA | 动态补翻（已有） |
+| 嵌入墙 E | iframe / 字幕 | same-origin 注入 / 提示打开源地址 |
+| 结构墙 S | x.com / 社交 / 多列 | 站点适配器规则（已有 + 扩充） |
 
 ## 安装（开发模式）
 
@@ -42,12 +58,13 @@
 src/
   manifest.json
   background/          service worker（消息中枢 + router + providers）
-  content/             整页翻译 + 划词 UI
-  shared/              config / util / storage
+  content/             整页翻译 + 站点适配 + 划词 UI
+  wall/                （规划）翻译墙检测 / P·A 墙策略
+  shared/              config / util / storage / dynamic-core
   options/             引擎配置页
   popup/               快捷控制面板
   icons/               图标
-scripts/make_icons.py  图标生成脚本
+scripts/               make_icons.py（图标）+ 动态补翻单测
 ```
 
 ## 说明

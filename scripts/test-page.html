@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TransVault dynamic demo (infinite scroll)</title>
+<style>
+  body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 20px; }
+  .post { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 18px; margin: 14px 0; }
+  .post .author { color: #6b7280; font-size: 13px; margin-bottom: 6px; }
+  .post .body { font-size: 15px; line-height: 1.6; }
+  /* 与 src/content/page-translator.js 注入的 .transvault-trans 保持同款样式 */
+  .post .transvault-trans {
+    box-sizing: border-box; display: block; width: 100%; max-width: 100%; flex: 1 0 100%;
+    margin: .35em 0 .85em; padding: 0;
+    font-size: 14px; line-height: 1.7; font-weight: 400;
+    color: inherit; text-align: start; word-break: break-word; overflow-wrap: anywhere;
+  }
+  button { padding: 8px 18px; border: none; border-radius: 8px; background: #4f46e5; color: #fff;
+    font-size: 14px; cursor: pointer; margin-right: 8px; }
+  button:hover { background: #4338ca; }
+  #status { margin-top: 12px; color: #9ca3af; font-size: 13px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>TransVault dynamic demo — 无限滚动补翻</h1>
+  <p>点击「追加 3 条」模拟滚动加载新内容；开启翻译后，新出现的内容会自动补翻（假翻译表）。</p>
+  <button id="btn-add">追加 3 条（模拟滚动）</button>
+  <button id="btn-translate">开启翻译</button>
+  <button id="btn-restore">还原</button>
+  <div id="status">未翻译</div>
+  <div id="feed"></div>
+
+  <script src="../src/shared/dynamic-core.js"></script>
+  <script>
+    const Core = globalThis.TransVaultDynamicCore;
+
+    // ---- 简单英文→中文假翻译表（demo 用，真实环境走 background 引擎） ----
+    const DICT = {
+      "The quick brown fox jumps over the lazy dog.": "敏捷的棕色狐狸跳过了懒惰的狗。",
+      "Artificial intelligence is transforming the way we work.": "人工智能正在改变我们的工作方式。",
+      "The ocean is vast, mysterious, and full of life.": "海洋广阔、神秘且充满生机。",
+      "Learning a new language opens many doors.": "学习一门新语言能打开很多扇门。",
+      "Space exploration inspires humanity to dream bigger.": "太空探索激励人类梦想更远大。",
+      "Music has the power to heal and connect people.": "音乐有治愈和连接人心的力量。",
+      "The future belongs to those who prepare for it today.": "未来属于今天为之准备的人。",
+      "Great stories are told across generations.": "伟大的故事代代相传。",
+    };
+    const SENTENCES = Object.keys(DICT);
+    function fakeTranslate(text) { return DICT[text.trim()] || ("[译] " + text); }
+
+    const feed = document.getElementById("feed");
+    const status = document.getElementById("status");
+    const MARK = "data-tv-translated";
+    let translated = false;
+
+    function addPost(index) {
+      const text = SENTENCES[index % SENTENCES.length];
+      const post = document.createElement("div");
+      post.className = "post";
+      post.innerHTML =
+        '<div class="author">@user' + (index + 1) + ' · just now</div>' +
+        '<div class="body">' + text + '</div>';
+      feed.appendChild(post);
+      return post;
+    }
+
+    // 初始填充 5 条
+    for (let i = 0; i < 5; i++) addPost(i);
+
+    // ---- 动态补翻：observer + scheduler（完整复用 dynamic-core 的 DebouncedScheduler） ----
+    let scheduler = null;
+    let observer = null;
+
+    function rootOf(node) {
+      let el = node && node.nodeType === 1 ? node : (node && node.parentElement);
+      while (el && el !== document.body) {
+        if (el.classList && el.classList.contains("post")) return el;
+        el = el.parentElement;
+      }
+      return null;
+    }
+
+    function already(root) { return root.getAttribute(MARK) !== null; }
+    function rootText(root) { return (root.querySelector(".body") || root).textContent.trim(); }
+
+    function handleMutations(muts) {
+      for (const m of muts) {
+        if (!m.addedNodes) continue;
+        for (const n of m.addedNodes) {
+          const root = rootOf(n);
+          if (!root || already(root)) continue;
+          scheduler.touch(root);
+        }
+      }
+    }
+
+    function enable() {
+      if (observer) return;
+      scheduler = Core.DebouncedScheduler({
+        stableWindowMs: 400, debounceMs: 200,
+        onBatch: (roots) => {
+          roots.forEach((root) => {
+            if (already(root)) return;
+            const text = rootText(root);
+            const span = document.createElement("span");
+            span.className = "transvault-trans";
+            span.textContent = fakeTranslate(text);
+            root.appendChild(span);
+            root.setAttribute(MARK, "1");
+          });
+          status.textContent = "[observer on] 补翻 " + roots.length + " 条 @" + new Date().toLocaleTimeString();
+        },
+      });
+      observer = new MutationObserver(handleMutations);
+      observer.observe(document.body, { subtree: true, childList: true });
+    }
+
+    // ---- 首个「开启翻译」：翻译现有 + 开启 observer ----
+    document.getElementById("btn-translate").addEventListener("click", () => {
+      // 给已存在内容补译
+      document.querySelectorAll(".post").forEach((root) => {
+        if (already(root)) return;
+        const span = document.createElement("span");
+        span.className = "transvault-trans";
+        span.textContent = fakeTranslate(rootText(root));
+        root.appendChild(span);
+        root.setAttribute(MARK, "1");
+      });
+      translated = true;
+      enable();
+      status.textContent = "[on] 已翻译现有 " + document.querySelectorAll(".post").length + " 条，开启动态补翻";
+    });
+
+    document.getElementById("btn-add").addEventListener("click", () => {
+      const start = feed.children.length;
+      for (let i = start; i < start + 3; i++) addPost(i);
+      status.textContent = "已追加 3 条，共 " + feed.children.length + " 条" + (translated ? "（等待补翻…）" : "（未开启翻译）");
+    });
+
+    document.getElementById("btn-restore").addEventListener("click", () => {
+      if (observer) { observer.disconnect(); observer = null; }
+      if (scheduler) { scheduler.clear(); scheduler = null; }
+      document.querySelectorAll(".transvault-trans").forEach((s) => s.remove());
+      document.querySelectorAll(".post").forEach((p) => p.removeAttribute(MARK));
+      translated = false;
+      status.textContent = "已还原";
+    });
+  </script>
+</body>
+</html>

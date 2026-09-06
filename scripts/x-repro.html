@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>TransVault x.com 注入位置复现</title>
+<style>
+  body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background:#fff; padding:8px; }
+  #feed { max-width: 598px; margin: 0 auto; border: 1px solid #e1e8ed; border-radius: 12px; overflow:hidden; }
+  #status { max-width: 598px; margin: 8px auto; color:#536471; font-size:13px; white-space:pre-wrap; }
+  button { margin: 4px; padding:6px 14px; border-radius:9999px; border:1px solid #cfd9de; background:#fff; cursor:pointer; }
+  button.primary { background:#0f1419; color:#fff; border-color:#0f1419; }
+</style>
+</head>
+<body>
+<button id="btn-translate" class="primary">开启翻译</button>
+<button id="btn-restore">还原</button>
+<div id="status"></div>
+<div id="feed"></div>
+
+<!-- 先加载真实依赖 -->
+<script src="../src/shared/config.js"></script>
+<script src="../src/shared/util.js"></script>
+<script src="../src/shared/dynamic-core.js"></script>
+
+<script>
+  // ---------- stub chrome（模拟 content script 环境） ----------
+  globalThis._storage = { tv_settings: null };
+  globalThis.chrome = {
+    runtime: {
+      onMessage: { addListener(fn) { globalThis.__msgHandler = fn; } },
+      async sendMessage(msg) {
+        const texts = (msg && msg.req && msg.req.texts) || [];
+        return {
+          ok: true,
+          translations: texts.map((t) => "【译】" + t),
+        };
+      },
+    },
+    storage: {
+      local: {
+        async get(keyArr) {
+          const out = {};
+          const keys = Array.isArray(keyArr) ? keyArr : [keyArr];
+          keys.forEach((k) => { out[k] = globalThis._storage[k]; });
+          return out;
+        },
+        async set(obj) { Object.assign(globalThis._storage, obj); },
+      },
+      sync: { async get() { return {}; }, async set() {} },
+    },
+  };
+</script>
+<script src="../src/shared/storage.js"></script>
+<script src="../src/content/site-adapters.js"></script>
+
+<script>
+  // ========= 强制命中 x.com 适配器（即使本地 file://） =========
+  (function () {
+    const Adapters = globalThis.TransVaultSiteAdapters;
+    const realGet = Adapters.getAdapter.bind(Adapters);
+    Adapters.getAdapter = function () { return realGet("x.com"); };
+  })();
+</script>
+
+<script src="../src/content/page-translator.js"></script>
+
+<script>
+  // ========= 复刻 x.com 带图推文的真实 DOM（flex 列布局） =========
+  const feed = document.getElementById("feed");
+  const status = document.getElementById("status");
+
+  function addTweet() {
+    const article = document.createElement("article");
+    article.setAttribute("data-testid", "tweet");
+
+    // 外层 flex 行：头像 | 内容列
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex; padding:12px 16px; border-bottom:1px solid #e1e8ed;";
+
+    const avatar = document.createElement("div");
+    avatar.style.cssText = "flex:0 0 40px; margin-right:12px;";
+    avatar.innerHTML = '<div style="background:#657786;border-radius:50%;width:40px;height:40px;"></div>';
+    row.appendChild(avatar);
+
+    // 内容列（x.com 正文+媒体所在，flex 纵向）
+    const content = document.createElement("div");
+    content.style.cssText = "flex:1 1 auto; min-width:0; display:flex; flex-direction:column;";
+
+    const name = document.createElement("div");
+    name.setAttribute("data-testid", "User-Name");
+    name.textContent = "@good_rich · just now";
+    name.style.cssText = "font-size:14px; color:#536471; margin-bottom:2px;";
+    content.appendChild(name);
+
+    // 正文 tweetText（适配器 textSelector），正文拆成多个 span
+    const body = document.createElement("div");
+    body.setAttribute("data-testid", "tweetText");
+    body.style.cssText = "font-size:15px; line-height:20px; color:#0f1419;";
+
+    const s1 = document.createElement("span"); s1.textContent = "Here is an important announcement about our latest release, ";
+    const sLink = document.createElement("span"); sLink.setAttribute("role", "link"); sLink.textContent = "https://example.com/news";
+    const s2 = document.createElement("span"); s2.textContent = " — stay tuned for more.";
+    body.appendChild(s1); body.appendChild(sLink); body.appendChild(s2);
+    content.appendChild(body);
+
+    // 图片媒体（tweetPhoto）
+    const media = document.createElement("div");
+    media.setAttribute("data-testid", "tweetPhoto");
+    media.style.cssText = "margin-top:10px; border-radius:12px; overflow:hidden; width:100%;";
+    media.innerHTML = '<div style="background:#cfd9de;height:220px;display:flex;align-items:center;justify-content:center;color:#536471;">[图片/视频 占位]</div>';
+    content.appendChild(media);
+
+    // 操作栏（适配器 exclude）
+    const bar = document.createElement("div");
+    bar.setAttribute("data-testid", "action-bar");
+    bar.textContent = "💬 12   🔁 34   ❤️ 56";
+    bar.style.cssText = "margin-top:10px; color:#536471; font-size:13px;";
+    content.appendChild(bar);
+
+    row.appendChild(content);
+    article.appendChild(row);
+    feed.appendChild(article);
+  }
+
+  addTweet(); addTweet();
+
+  // 触发真实翻译
+  document.getElementById("btn-translate").addEventListener("click", async () => {
+    const pt = globalThis.TransVaultPageTranslator;
+    await pt.translatePage();
+    const lines = [];
+    document.querySelectorAll("article").forEach((article) => {
+      const tr = article.querySelector(".transvault-trans");
+      const body = article.querySelector("[data-testid=tweetText]");
+      const media = article.querySelector("[data-testid=tweetPhoto]");
+      if (!tr) { lines.push("(无译文)"); return; }
+      const bodyB = body.getBoundingClientRect().bottom;
+      const trTop = tr.getBoundingClientRect().top;
+      const mediaTop = media.getBoundingClientRect().top;
+      const r = tr.getBoundingClientRect();
+      lines.push(
+        "译文top=" + Math.round(trTop) +
+        " 原文底=" + Math.round(bodyB) +
+        " 媒体顶=" + Math.round(mediaTop) +
+        " 宽=" + Math.round(r.width) +
+        " 位置:" + (trTop >= bodyB - 1 ? "原文下方" : "原文行内") +
+        " / " + (trTop <= mediaTop - 1 ? "媒体上方" : "媒体下方")
+      );
+    });
+    status.textContent = "已翻译 ✓\n" + lines.join("\n");
+  });
+
+  document.getElementById("btn-restore").addEventListener("click", async () => {
+    const pt = globalThis.TransVaultPageTranslator;
+    pt.restore();
+    status.textContent = "已还原";
+  });
+</script>

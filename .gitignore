@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 图标生成产物（可重新运行 scripts/make_icons.py 生成）
+# 注：src/icons 下的正式图标需保留，此处不忽略
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.suo
+*.user
+Thumbs.db
+.DS_Store
+
+# 日志
+*.log

@@ -15,3 +15,13 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 测试
+node_modules/
+test-results/
+test/screenshots/
+test/playwright-report/
+.playwright/
+
+# 环境配置（本地扩展路径等敏感信息）
+.env

@@ -43,6 +43,9 @@
         "shared/storage.js",
         "shared/dynamic-core.js",
         "content/site-adapters.js",
+        "adapters/index.js",
+        "wall/detector.js",
+        "wall/strategies/paywall.js",
         "content/page-translator.js",
         "content/ui.js"
       ],

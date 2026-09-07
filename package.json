@@ -1,0 +1,15 @@
+{
+  "name": "transvault",
+  "version": "0.1.0",
+  "description": "TransVault · 沉浸式双语网页翻译 MV3 扩展",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

@@ -165,5 +165,7 @@
     detectPaywall, detectAntibot, detectDynamic, detectEmbed, detectStructure,
   };
   globalThis.TransVaultWallDetector = API;
+  // 同时暴露到 window，方便测试（MV3 content script 与页面共享 DOM/window）
+  try { window.__TV_WALL_DETECTOR__ = API; } catch (e) {}
   if (typeof module !== "undefined" && module.exports) module.exports = API;
 })();

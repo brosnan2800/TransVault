@@ -65,7 +65,19 @@ src/
   popup/               快捷控制面板
   icons/               图标
 scripts/               make_icons.py（图标）+ 动态补翻单测
+test/                  Playwright 测试（spec/fixtures/screenshots）
+docs/adr/              架构决策记录（ADR-001 定位收窄 · ADR-002 墙分类 · ADR-003 流式渲染）
 ```
+
+## 文档索引
+
+| 文档 | 内容 | 什么时候读 |
+|---|---|---|
+| [DESIGN.md](DESIGN.md) | 架构设计（定位 / 墙分类 / 子系统 / 实施阶段） | 改架构/接口前 |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 开发规范（代码风格 / 提交规范 / 自测清单） | 每次改代码前 |
+| [TESTING.md](TESTING.md) | 测试规范（触发规则 / profile 红线 / 会话协议） | 每次会话开始前 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 | 功能变化后追溯 |
+| [docs/adr/](docs/adr/) | 架构决策记录（为什么这么做） | 理解历史决策时 |
 
 ## 说明
 

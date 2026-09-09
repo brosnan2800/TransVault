@@ -14,7 +14,8 @@
 
     // 引擎链分层（数组由低到高优先级；router 依次尝试，失败回退下一项）
     // 可用 id 见 ENGINE_CATALOG
-    engineOrder: ["google"],
+    // google 免 Key 但会 429 限流；lingva 走反代域名不受其限流影响，作为自动兜底
+    engineOrder: ["google", "lingva"],
 
     // 各引擎专用配置（options 页填写）
     libreTranslateUrl: "http://127.0.0.1:5000",

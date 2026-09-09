@@ -178,26 +178,30 @@
     return resolveGenericRoot(node);
   }
 
-  // 把文本按字符数分批
+  // 把文本按字符数分批（返回每批在原数组中的起始索引，供流式渲染定位 roots）
   function batchTexts(texts, maxChars) {
     const batches = [];
     let cur = [];
     let curLen = 0;
-    for (const t of texts) {
+    let start = 0;
+    for (let i = 0; i < texts.length; i++) {
+      const t = texts[i];
       if (curLen + t.length > maxChars && cur.length) {
-        batches.push(cur);
+        batches.push({ start, texts: cur });
         cur = [];
         curLen = 0;
+        start = i;
       }
       cur.push(t);
       curLen += t.length;
     }
-    if (cur.length) batches.push(cur);
+    if (cur.length) batches.push({ start, texts: cur });
     return batches;
   }
 
-  // 翻译一批文本（并发发消息，每个批次独立 Promise）
-  async function translateBatch(texts, settings) {
+  // 翻译一批文本（并发发消息；每批完成立即触发 onBatchDone 流式渲染）
+  // onBatchDone(startIdx, batchTranslations)：startIdx 是本批在 texts 中的起始索引
+  async function translateBatch(texts, settings, onBatchDone) {
     settings = settings || (await Store.getSettings());
     const maxChars = (settings.batch && settings.batch.maxCharsPerBatch) || 1800;
     const batches = batchTexts(texts, maxChars);
@@ -207,11 +211,11 @@
     const results = new Array(batches.length);
     let nextIdx = 0;
 
-    async function sendOne(batch, idx) {
+    async function sendOne(entry, idx) {
       const resp = await chrome.runtime.sendMessage({
         type: "translate",
         req: {
-          texts: batch,
+          texts: entry.texts,
           source: settings.sourceLang || "auto",
           target: settings.targetLang || "zh-CN",
           style: settings.baoyu && settings.baoyu.style,
@@ -221,9 +225,12 @@
       if (resp && resp.ok && resp.translations) {
         results[idx] = resp.translations;
       } else {
-        // 失败：用原文占位
-        results[idx] = batch.map(() => "");
+        // 失败：用原文占位（空串 → renderOne 跳过）+ 打出原因（引擎限流/网络等）
+        console.warn("[TransVault] 批次翻译失败:", resp && resp.error ? resp.error : "unknown", "| 段数:", entry.texts.length);
+        results[idx] = entry.texts.map(() => "");
       }
+      // 流式渲染：本批完成立即通知（不等其他批）
+      if (onBatchDone) onBatchDone(entry.start, results[idx]);
     }
 
     await Promise.all(
@@ -236,7 +243,7 @@
     );
 
     const all = [];
-    for (const r of results) all.push(...r);
+    for (const r of results) all.push(...(r || []));
     return all;
   }
 
@@ -408,12 +415,18 @@
     if (scheduler) { try { scheduler.clear(); } catch (e) {} scheduler = null; }
   }
 
-  // 批量翻译一组根并渲染（供整页 + 补翻复用）
+  // 批量翻译一组根并流式渲染（每批完成立即渲染对应区间的 roots）
   async function translateRoots(roots, settings) {
     if (!roots.length) return;
     const texts = roots.map((r) => getRootText(r));
-    const translations = await translateBatch(texts, settings);
-    renderTranslations(roots, translations);
+    await translateBatch(texts, settings, (startIdx, batchTranslations) => {
+      // 本批对应的 roots 连续区间立即渲染
+      for (let i = 0; i < batchTranslations.length; i++) {
+        const root = roots[startIdx + i];
+        const trans = batchTranslations[i];
+        if (root && trans) renderOne(root, trans);
+      }
+    });
   }
 
   // 还原（非破坏性：直接移除译文节点，不改动原文 DOM）
@@ -434,6 +447,23 @@
     isTranslated = false;
   }
 
+  // 视口优先排序：可视区内的段落排最前（用户先看到当前屏幕的译文），其余按文档顺序
+  function sortByViewport(roots) {
+    const vh = window.innerHeight || 900;
+    return roots
+      .map((r) => {
+        let inView = 1, top = Infinity;
+        try {
+          const rect = r.getBoundingClientRect();
+          top = rect.top;
+          inView = rect.top < vh && rect.bottom > 0 ? 0 : 1;
+        } catch (e) { /* 游离节点按非视口处理 */ }
+        return { r, inView, top };
+      })
+      .sort((a, b) => a.inView - b.inView || a.top - b.top)
+      .map((x) => x.r);
+  }
+
   // 主翻译流程
   async function translatePage() {
     if (isTranslating) return;
@@ -441,11 +471,19 @@
     try {
       const settings = await Store.getSettings();
       _targetLang = settings.targetLang || "zh-CN";
-      const roots = collectRoots().filter((r) => !isRootSkippable(r));
-      if (!roots.length) return;
-      await translateRoots(roots, settings);
+
+      // 关键：先启用 observer 再开始翻译。
+      // SPA 站点（WP/Next.js 等）会在翻译进行中重渲染 body，删掉译文与原文段落；
+      // observer 负责捕获重建的段落并补翻（命中缓存则秒回），否则译文会被静默清空。
       isTranslated = true;
       enableObserver(settings);
+
+      const roots = sortByViewport(collectRoots().filter((r) => !isRootSkippable(r)));
+      if (!roots.length) {
+        bus.emit("translated", { count: 0 });
+        return;
+      }
+      await translateRoots(roots, settings);
       bus.emit("translated", { count: roots.length });
     } finally {
       isTranslating = false;

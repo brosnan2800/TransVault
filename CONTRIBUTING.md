@@ -68,6 +68,36 @@ type: 中文描述（动词开头）
 - 一句话说清做了什么
 - 必要时括号补充模块/上下文
 
+### 2.4 GitHub 推送认证（本机配置）
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| 远端 | `https://github.com/brosnan2800/TransVault.git`（HTTPS） | push/pull 走 HTTPS |
+| 凭据助手 | 系统级 `git config`：`credential.helper=manager` | **GCM**（Git Credential Manager） |
+| 凭据存储 | Windows 凭据管理器：`target=git:https://github.com`，用户名 `brosnan2800` | 令牌由 GCM 自动读写 |
+| 推送命令 | `git push origin master` | 无交互，自动取用令牌 |
+
+**规则**：
+
+- ✅ 令牌只存 Windows 凭据管理器，**严禁**写入 `.git/config`、`~/.git-credentials` 或任何仓库文件。
+- ✅ `gh` CLI 当前未登录；若需走 GitHub API（例如改仓库 About/description），用下述 `git credential fill` 方式取 GCM 令牌，**不要**另生成令牌散落各处。
+- ⚠️ **编码红线**：任何经 API / CLI 写入 GitHub 的中文（description、release 等）必须以 **UTF-8** 提交。Windows 终端默认可能为 GBK，未经 `chcp 65001`（或按 UTF-8 编码）直接发出去，中文会被 GitHub 替换成 `?` 永久存坏（曾导致 About 乱码 `???`，需 API PATCH 重写才修复）。
+- 📌 取 GCM 令牌（一次性、避免回显到历史/日志）：
+
+  ```powershell
+  # 交互式获取，打印 username/password，用完立即清屏不回显进文件
+  git credential fill
+  # 输入:
+  #   protocol=https
+  #   host=github.com
+  #   <空行>
+  ```
+
+**排查备忘**（下次再遇认证/乱码问题）：
+1. `git config --show-origin --list` → 确认 `credential.helper=manager`。
+2. `cmdkey /list` → 找 `LegacyGeneric:target=git:https://github.com`。
+3. `gh auth status` → 确认 gh 是否登录（本机当前未登录）。
+
 ---
 
 ## 3. 分支策略
